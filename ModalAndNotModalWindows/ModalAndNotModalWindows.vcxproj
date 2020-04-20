@@ -143,9 +143,11 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="DialogProcs.cpp" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="DialogProcs.h" />
     <ClInclude Include="resource.h" />
   </ItemGroup>
   <ItemGroup>
