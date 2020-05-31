@@ -9,6 +9,13 @@
 #define IDD_USER                        107
 #define IDC_MENU_EDIT                   109
 #define IDC_MAIN_EDIT                   109
+
+#define HOTKEY_NEW						201
+#define HOTKEY_OPEN						202
+#define HOTKEY_SAVE						203
+#define HOTKEY_SAVEAS					204
+#define HOTKEY_ABOUT					214
+
 #define IDC_NAME_SECONDNAME             1001
 #define IDC_EDIT1                       1002
 #define IDC_EDIT2                       1004
