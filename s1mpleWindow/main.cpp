@@ -1,10 +1,15 @@
 #include<Windows.h>
+#include <CommCtrl.h>
 #include"resource.h"
 
 CONST CHAR szFilter[] = "Text files (*.txt)\0*.txt\0All files (*.*)\0*.*\0";
 
 CHAR szFileName[MAX_PATH] = {};	//Имя открытого, или сохраненного файла
 LPSTR lpszFileText;		//Содержимое открытого, или сохраненного файла
+
+
+HFONT g_hFont;
+COLORREF g_rgbText;
 
 LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 BOOL	CALLBACK DlgProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
@@ -13,6 +18,10 @@ BOOL	LoadTextFileToEdit(HWND hEdit, LPCTSTR pszFileName);
 BOOL	SaveTextFileFromEdit(HWND hEdit, LPCTSTR pszFileName);
 
 BOOL __stdcall DoFileOpen(HWND hwnd);
+VOID SetWindowTitle(HWND hEdit);
+
+
+
 VOID DoFileSaveAs(HWND hwnd);
 
 BOOL FileWasChanged(HWND hwnd);
@@ -33,6 +42,9 @@ VOID WatchChanges(HWND hwnd, BOOL (__stdcall *Action)(HWND))
 		Action(hwnd);
 	}
 }
+
+VOID DoSelectFont(HWND hwnd);
+
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInst, LPSTR lpCmdLine, int nCmdShow)
 {
@@ -119,6 +131,11 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		AppendMenu(hMenu, MF_STRING | MF_POPUP, (UINT)hSubMenu, "&File");
 
 		hSubMenu = CreatePopupMenu();
+		AppendMenu(hSubMenu, MF_STRING, ID_FORMAT_FONT, "Font");
+		AppendMenu(hMenu, MF_STRING|MF_POPUP,(UINT)hSubMenu, "&Format");
+
+
+		hSubMenu = CreatePopupMenu();
 		AppendMenu(hSubMenu, MF_STRING, ID_HELP, "&About");
 		AppendMenu(hMenu, MF_STRING | MF_POPUP, (UINT)hSubMenu, "&Help");
 
@@ -155,6 +172,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		}
 		////////////////////////////////////////////////////////////////////////////
 		////////////////////////////HOTKEY//////////////////////////////////////////
+		////////////////////////////////////////////////////////////////////////////
 		RegisterHotKey(hwnd, HOTKEY_NEW, MOD_CONTROL, 'N');
 		RegisterHotKey(hwnd, HOTKEY_OPEN, MOD_CONTROL, 'O');
 		RegisterHotKey(hwnd, HOTKEY_SAVE, MOD_CONTROL, 'S');
@@ -163,14 +181,121 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
 		////////////////////////////////////////////////////////////////////////////
 
+		/////////////////////////////////////////////////////////////////////////////
+		////////////////////////////TOOLBAR//////////////////////////////////////////
+		/////////////////////////////////////////////////////////////////////////////
+		HWND hTool = CreateWindowEx
+		(
+			0,
+			TOOLBARCLASSNAME,
+			NULL,
+			WS_CHILD | WS_VISIBLE,
+			0, 0,//POSITION
+			0, 0,//SIZE
+			hwnd,
+			(HMENU)IDC_MAIN_TOOL,
+			GetModuleHandle(NULL),
+			NULL
+		);
+		SendMessage(hTool, TB_BUTTONSTRUCTSIZE, (WPARAM)sizeof(TBBUTTON), 0);
+		TBBUTTON tbb[3];
+		TBADDBITMAP tbab;
+		tbab.hInst = HINST_COMMCTRL;
+		tbab.nID = IDB_STD_SMALL_COLOR;
+		SendMessage(hTool, TB_ADDBITMAP, 0, (LPARAM)&tbab);
+
+		ZeroMemory(&tbb, sizeof(tbb));
+		tbb[0].iBitmap = STD_FILENEW;
+		tbb[0].fsState = TBSTATE_ENABLED;
+		tbb[0].fsStyle = TBSTYLE_BUTTON;
+		tbb[0].idCommand = ID_FILE_NEW;
+
+		tbb[1].iBitmap = STD_FILEOPEN;
+		tbb[1].fsState = TBSTATE_ENABLED;
+		tbb[1].fsStyle = TBSTYLE_BUTTON;
+		tbb[1].idCommand = ID_FILE_OPEN;
+
+		tbb[2].iBitmap = STD_FILESAVE;
+		tbb[2].fsState = TBSTATE_ENABLED;
+		tbb[2].fsStyle = TBSTYLE_BUTTON;
+		tbb[2].idCommand = ID_FILE_SAVE;
+
+		SendMessage(hTool, TB_ADDBUTTONS, sizeof(tbb) / sizeof(TBBUTTON), (LPARAM)&tbb);	
+		/////////////////////////////////////////////////////////////////////////////
+
+		///////////////////////////////////////////////////////////////////////////////
+		////////////////////////////STATUSBAR//////////////////////////////////////////
+		//////////////////////////////////////////////////////////////////////////////
+		HWND hStatus = CreateWindowEx
+		(
+			0,
+			STATUSCLASSNAME,
+			NULL,
+			WS_CHILD | WS_VISIBLE | SBARS_SIZEGRIP,
+			0, 0,
+			0, 0,
+			hwnd,
+			(HMENU)IDC_MAIN_STATUS,
+			GetModuleHandle(NULL),
+			NULL
+		);
+
+		int statwidth[] = { 100,150,-1 };
+		SendMessage(hStatus, SB_SETPARTS, sizeof(statwidth) / sizeof(int), (LPARAM)statwidth);
+		SendMessage(hStatus, SB_SETTEXT, 0,(LPARAM)"This is a status bar");
+
+
+		/////////////////////////////////////////////////////////////////////////////
+
+		///////////////////////////////////////////////////////////////////////////////
+		////////////////////////////FONT//////////////////////////////////////////
+		//////////////////////////////////////////////////////////////////////////////
+		HDC hdc = GetDC(NULL);
+		int lfHeight = -MulDiv(12, GetDeviceCaps(hdc, LOGPIXELSY), 72);
+		ReleaseDC(NULL, hdc);
+		HFONT hFont = CreateFont
+		(
+			lfHeight, 0, 0, 0, 0,
+			FALSE, //ITALIC
+			0,
+			0,
+			RUSSIAN_CHARSET, //CHARSET
+			0,
+			0, 
+			0, 
+			0,
+			"Time New Romans"
+		);
+		g_hFont = hFont;
+		SendMessage(hEdit, WM_SETFONT, (WPARAM)hFont, 0);
+		SetFocus(hEdit);
+		/////////////////////////////////////////////////////////////////////////////
 	}
 	break;
 	case WM_SIZE:
 	{
-		RECT rcClient;
+		/*RECT rcClient;
 		GetClientRect(hwnd, &rcClient);
 		HWND hEdit = GetDlgItem(hwnd, IDC_MAIN_EDIT);
-		SetWindowPos(hEdit, NULL, 0, 0, rcClient.right, rcClient.bottom, SWP_NOZORDER);
+		SetWindowPos(hEdit, NULL, 0, 0, rcClient.right, rcClient.bottom, SWP_NOZORDER);*/
+		HWND hTool = GetDlgItem(hwnd, IDC_MAIN_TOOL);
+		SendMessage(hTool, TB_AUTOSIZE, 0, 0);
+		RECT rcTool;
+		GetWindowRect(hTool, &rcTool);
+		int iToolHeight = rcTool.bottom - rcTool.top;
+
+		HWND hStatus = GetDlgItem(hwnd, IDC_MAIN_STATUS);
+		SendMessage(hStatus, WM_SIZE, 0, 0);
+		RECT rcStatus;
+		GetWindowRect(hStatus, &rcStatus);
+		int iStatusHeight = rcStatus.bottom - rcStatus.top;
+
+
+		HWND hEdit = GetDlgItem(hwnd, IDC_MAIN_EDIT);
+		RECT rcClient;
+		GetClientRect(hwnd, &rcClient);
+		int iEditHeight = rcClient.bottom - iToolHeight- iStatusHeight;
+		SetWindowPos(hEdit, NULL, 0, iToolHeight, rcClient.right, iEditHeight, SWP_NOZORDER);
 	}
 	break;
 	case WM_DROPFILES:
@@ -236,6 +361,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			//DestroyWindow(hwnd);
 			SendMessage(hwnd, WM_CLOSE, 0, 0);
 			break;
+		case ID_FORMAT_FONT:
+				DoSelectFont(hwnd);
+				break;
 		case ID_HELP:
 		{
 			switch (DialogBox(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_ABOUT), hwnd, DlgProc))
@@ -321,7 +449,12 @@ BOOL	LoadTextFileToEdit(HWND hEdit, LPCTSTR pszFileName)
 				if (ReadFile(hFile, lpszFileText, dwFileSize, &dwRead, NULL))
 				{
 					lpszFileText[dwFileSize] = 0;
-					if (SetWindowText(hEdit, lpszFileText))bSuccess = TRUE;
+					if (SetWindowText(hEdit, lpszFileText))
+					{
+						bSuccess = TRUE;
+						SetWindowTitle(hEdit);
+					}
+					
 				}
 			}
 		}
@@ -346,7 +479,12 @@ BOOL	SaveTextFileFromEdit(HWND hEdit, LPCTSTR pszFileName)
 				if (GetWindowText(hEdit, lpszFileText, dwTextLength + 1))
 				{
 					DWORD dwWritten;
-					if (WriteFile(hFile, lpszFileText, dwTextLength, &dwWritten, NULL))bSuccess = TRUE;
+					if (WriteFile(hFile, lpszFileText, dwTextLength, &dwWritten, NULL))
+					{
+						bSuccess = TRUE;
+						SetWindowTitle(hEdit);
+					}
+						
 				}
 			}
 		}
@@ -421,4 +559,47 @@ BOOL FileWasChanged(HWND hwnd)
 		GlobalFree(lpszCurrentText);
 	}
 	return bWasChanged;
+}
+VOID SetWindowTitle(HWND hEdit)
+{
+	CHAR szTitle[MAX_PATH] = "s1mpleWindowEdit - ";
+	LPSTR lpszNameOnly = strrchr(szFileName, '\\') + 1;
+	strcat_s(szTitle, MAX_PATH, lpszNameOnly);
+	HWND hwndParent = GetParent(hEdit);
+	SetWindowText(hwndParent, szTitle);
+}
+
+VOID DoSelectFont(HWND hwnd)
+{
+	CHOOSEFONT cf;
+	LOGFONT lf;
+
+	ZeroMemory(&cf, sizeof(cf));
+	ZeroMemory(&lf, sizeof(lf));
+
+	GetObject(g_hFont, sizeof(LOGFONT), &lf);
+
+	cf.Flags =  CF_EFFECTS|CF_INITTOLOGFONTSTRUCT | CF_SCREENFONTS;
+	cf.hwndOwner = hwnd;
+	//cf.hInstance = GetModuleHandle(NULL);
+	cf.lpLogFont = &lf;
+	cf.rgbColors = g_rgbText;
+	cf.lStructSize = sizeof(CHOOSEFONT);
+
+
+	if (ChooseFont(&cf))
+	{
+		HFONT hf = CreateFontIndirect(&lf);
+		if (hf)
+		{
+			g_hFont = hf;
+		}
+		else
+		{
+			MessageBox(hwnd, "Font Creation Failed", "Error", MB_OK | MB_ICONERROR);
+		}
+		g_rgbText = cf.rgbColors;
+		
+	}
+	SendMessage(GetDlgItem(hwnd, IDC_MAIN_EDIT), WM_SETFONT, (WPARAM)g_hFont, TRUE);
 }

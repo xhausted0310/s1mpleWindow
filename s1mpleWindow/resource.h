@@ -9,6 +9,9 @@
 #define IDD_USER                        107
 #define IDC_MENU_EDIT                   109
 #define IDC_MAIN_EDIT                   109
+#define IDC_MAIN_TOOL					106
+#define IDC_MAIN_STATUS					108
+
 
 #define HOTKEY_NEW						201
 #define HOTKEY_OPEN						202
@@ -26,6 +29,7 @@
 #define ID_FILE_EXIT                    40005
 #define ID_HELP                         40006
 #define ID_HELP_USER                    40007
+#define ID_FORMAT_FONT 40008
 
 // Next default values for new objects
 // 
