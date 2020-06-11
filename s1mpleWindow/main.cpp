@@ -130,14 +130,17 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		AppendMenu(hSubMenu, MF_STRING, ID_FILE_EXIT, "E&xit");
 		AppendMenu(hMenu, MF_STRING | MF_POPUP, (UINT)hSubMenu, "&File");
 
+
+
 		hSubMenu = CreatePopupMenu();
 		AppendMenu(hSubMenu, MF_STRING, ID_FORMAT_FONT, "Font");
 		AppendMenu(hMenu, MF_STRING|MF_POPUP,(UINT)hSubMenu, "&Format");
 
 
 		hSubMenu = CreatePopupMenu();
-		AppendMenu(hSubMenu, MF_STRING, ID_HELP, "&About");
 		AppendMenu(hMenu, MF_STRING | MF_POPUP, (UINT)hSubMenu, "&Help");
+		AppendMenu(hSubMenu, MF_STRING, ID_HELP, "&About");
+		AppendMenu(hSubMenu, MF_STRING, ID_HELP, "&User");
 
 		SetMenu(hwnd, hMenu);
 
@@ -366,6 +369,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 				break;
 		case ID_HELP:
 		{
+			switch (DialogBox(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_USER), hwnd, DlgProc))
+			{
+			case IDOK:		MessageBox(hwnd, "Dialog ended with OK!", "Info", MB_OK | MB_ICONINFORMATION);		break;
+			case IDCANCEL:	MessageBox(hwnd, "Dialog ended with Cancel!", "Info", MB_OK | MB_ICONINFORMATION);	break;
+			case -1:		MessageBox(hwnd, "Dialog Failed!", "Error", MB_OK | MB_ICONERROR);		break;
+			}
 			switch (DialogBox(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_ABOUT), hwnd, DlgProc))
 			{
 			case IDOK:		MessageBox(hwnd, "Dialog ended with OK!", "Info", MB_OK | MB_ICONINFORMATION);		break;
@@ -374,6 +383,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			}
 		}
 		break;
+
+	
 		}
 		break;
 	case WM_CLOSE:
@@ -603,3 +614,4 @@ VOID DoSelectFont(HWND hwnd)
 	}
 	SendMessage(GetDlgItem(hwnd, IDC_MAIN_EDIT), WM_SETFONT, (WPARAM)g_hFont, TRUE);
 }
+
