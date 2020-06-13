@@ -1,61 +1,40 @@
 #include<Windows.h>
-#include <CommCtrl.h>
+#include<CommCtrl.h>
 #include"resource.h"
 
 CONST CHAR szFilter[] = "Text files (*.txt)\0*.txt\0All files (*.*)\0*.*\0";
-
-CHAR szFileName[MAX_PATH] = {};	//Имя открытого, или сохраненного файла
-LPSTR lpszFileText;		//Содержимое открытого, или сохраненного файла
-
+CHAR szCurrentFileName[MAX_PATH]{};
+LPSTR lpszSavedFileContent = NULL;
+LPSTR lpszCurrentFileContent = NULL;
+CHAR szFileName[MAX_PATH]{};//имя октрытого или сохронённого файла
+LPSTR lpszFileText;//содержимое октрытого или сохронённого файла
 
 HFONT g_hFont;
 COLORREF g_rgbText;
 
 LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 BOOL	CALLBACK DlgProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
-
 BOOL	LoadTextFileToEdit(HWND hEdit, LPCTSTR pszFileName);
 BOOL	SaveTextFileFromEdit(HWND hEdit, LPCTSTR pszFileName);
 
-BOOL __stdcall DoFileOpen(HWND hwnd);
-VOID SetWindowTitle(HWND hEdit);
-
-
-
-VOID DoFileSaveAs(HWND hwnd);
-
 BOOL FileWasChanged(HWND hwnd);
 
-VOID WatchChanges(HWND hwnd, BOOL (__stdcall *Action)(HWND))
-{
-	if (FileWasChanged(hwnd))
-	{
-		switch (MessageBox(hwnd, "Сохранить изменения в файле?", "Нетак быстро...", MB_YESNOCANCEL | MB_ICONQUESTION))
-		{
-		case IDYES:	SendMessage(hwnd, WM_COMMAND, ID_FILE_SAVE, 0);
-		case IDNO:	Action(hwnd);
-		case IDCANCEL:break;
-		}
-	}
-	else
-	{
-		Action(hwnd);
-	}
-}
+BOOL Compare(HWND hwnd);
+VOID DoFileAsSave(HWND hwnd);
+VOID DoFileSave(HWND hwnd);
+BOOL __stdcall DoFileOpen(HWND hwnd);
+VOID WatchChanges(HWND hwnd, BOOL(__stdcall*Action)(HWND));
+VOID SetWindowTitle(HWND hEdit);
 
 VOID DoSelectFont(HWND hwnd);
 
-
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInst, LPSTR lpCmdLine, int nCmdShow)
 {
-	if(lpCmdLine[0])
-		{
-		/*strcpy_s(szFileName, MAX_PATH, lpCmdLine);*/
-		for (int i = 0, j = 0; lpCmdLine[i]; i++)
-		{
-			if (lpCmdLine[i] != '\"')szFileName[j++], lpCmdLine[i];
-		}
-		}
+	//strcpy_s(szFileName, MAX_PATH, "C:\\Users\\Andry\\Desktop\\SomeFile.txt");
+	/*if (lpCmdLine[0])
+	{
+		strcpy_s(szFileName, MAX_PATH, lpCmdLine);
+	}*/
 	//1) Регистрация класса окна:
 	CONST CHAR SZ_CLASS_NAME[] = "myWindowClass";
 	WNDCLASSEX wc;
@@ -80,10 +59,19 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInst, LPSTR lpCmdLine, in
 		return 0;
 	}
 
+	if (lpCmdLine[0])
+	{
+		MessageBox(NULL, lpCmdLine, "lpCmdLine", MB_OK | MB_ICONINFORMATION);
+		//strcpy_s(szFileName, sizeof(szFileName), lpCmdLine);
+		for (int i = 0, j = 0; lpCmdLine[i]; i++)
+		{
+			if (lpCmdLine[i] != '\"')szFileName[j++] = lpCmdLine[i];
+		}
+	}
 	//2) Создание окна:
 	HWND hwnd = CreateWindowEx
 	(
-		WS_EX_ACCEPTFILES|WS_EX_CLIENTEDGE,
+		WS_EX_ACCEPTFILES | WS_EX_CLIENTEDGE,
 		SZ_CLASS_NAME,
 		"Title of my Window",
 		WS_OVERLAPPEDWINDOW,
@@ -96,6 +84,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInst, LPSTR lpCmdLine, in
 		MessageBox(NULL, "Window was not created", "Error", MB_OK | MB_ICONERROR);
 		return 0;
 	}
+	//MessageBox(hwnd, lpCmdLine, "Info", MB_OK | MB_ICONINFORMATION);
 
 	ShowWindow(hwnd, nCmdShow);
 	UpdateWindow(hwnd);
@@ -108,6 +97,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInst, LPSTR lpCmdLine, in
 		DispatchMessage(&msg);
 	}
 	return msg.wParam;
+
 }
 
 LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
@@ -125,22 +115,20 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		AppendMenu(hSubMenu, MF_STRING, ID_FILE_OPEN, "&Open");
 		AppendMenu(hSubMenu, MF_SEPARATOR, 0, 0);
 		AppendMenu(hSubMenu, MF_STRING, ID_FILE_SAVE, "&Save");
-		AppendMenu(hSubMenu, MF_STRING, ID_FILE_SAVEAS, "&SaveAs");
+		AppendMenu(hSubMenu, MF_STRING, ID_FILE_SAVEAS, "&Save as");
 		AppendMenu(hSubMenu, MF_SEPARATOR, 0, 0);
 		AppendMenu(hSubMenu, MF_STRING, ID_FILE_EXIT, "E&xit");
 		AppendMenu(hMenu, MF_STRING | MF_POPUP, (UINT)hSubMenu, "&File");
 
-
-
 		hSubMenu = CreatePopupMenu();
 		AppendMenu(hSubMenu, MF_STRING, ID_FORMAT_FONT, "Font");
-		AppendMenu(hMenu, MF_STRING|MF_POPUP,(UINT)hSubMenu, "&Format");
-
+		AppendMenu(hMenu, MF_STRING | MF_POPUP, (UINT)hSubMenu, "&Format");
 
 		hSubMenu = CreatePopupMenu();
-		AppendMenu(hMenu, MF_STRING | MF_POPUP, (UINT)hSubMenu, "&Help");
 		AppendMenu(hSubMenu, MF_STRING, ID_HELP, "&About");
-		AppendMenu(hSubMenu, MF_STRING, ID_HELP, "&User");
+		AppendMenu(hMenu, MF_STRING | MF_POPUP, (UINT)hSubMenu, "&Help");
+		AppendMenu(hSubMenu, MF_SEPARATOR, 0, 0);
+		AppendMenu(hSubMenu, MF_STRING, IDD_USER, "&User");
 
 		SetMenu(hwnd, hMenu);
 
@@ -164,43 +152,49 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		);
 
 		if (hEdit == NULL)
-			MessageBox(hwnd, "Can not create edit control", "Error", MB_OK | MB_ICONERROR);
+			MessageBox(hwnd, "Con not create edit control", "Error", MB_OK | MB_ICONERROR);
+		if (szFileName[0])
+		{
+			MessageBox(hwnd, "Loading files....", "Loading", MB_OK | MB_ICONINFORMATION);
+			LoadTextFileToEdit(hEdit, szFileName);
+		}
 
 		HFONT hDefault = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
 		SendMessage(hEdit, WM_SETFONT, (WPARAM)hDefault, MAKELPARAM(FALSE, 0));
+
+		lpszSavedFileContent = new CHAR[5]{};
 
 		if (szFileName[0])
 		{
 			LoadTextFileToEdit(GetDlgItem(hwnd, IDC_MAIN_EDIT), szFileName);
 		}
-		////////////////////////////////////////////////////////////////////////////
-		////////////////////////////HOTKEY//////////////////////////////////////////
-		////////////////////////////////////////////////////////////////////////////
+
+
+		/////////////////////////////////////////////////////////////////////////
+		///////////////////////  HOT KEYS   ////////////////////////////////////
+		///////////////////////////////////////////////////////////////////////
 		RegisterHotKey(hwnd, HOTKEY_NEW, MOD_CONTROL, 'N');
 		RegisterHotKey(hwnd, HOTKEY_OPEN, MOD_CONTROL, 'O');
 		RegisterHotKey(hwnd, HOTKEY_SAVE, MOD_CONTROL, 'S');
-		RegisterHotKey(hwnd, HOTKEY_SAVEAS, MOD_CONTROL+MOD_ALT,'S');
-		RegisterHotKey(hwnd, HOTKEY_ABOUT, 0,VK_F1);
-
-		////////////////////////////////////////////////////////////////////////////
-
-		/////////////////////////////////////////////////////////////////////////////
-		////////////////////////////TOOLBAR//////////////////////////////////////////
-		/////////////////////////////////////////////////////////////////////////////
+		RegisterHotKey(hwnd, HOTKEY_SAVEAS, MOD_CONTROL + MOD_ALT, 'S');
+		RegisterHotKey(hwnd, HOTKEY_ABOUT, 0, VK_F1);
+		/////////////////////////////////////////////////////////////////////////
+		///////////////////////  Toolbar   ////////////////////////////////////
+		///////////////////////////////////////////////////////////////////////
 		HWND hTool = CreateWindowEx
 		(
-			0,
-			TOOLBARCLASSNAME,
+			0, TOOLBARCLASSNAME,
 			NULL,
 			WS_CHILD | WS_VISIBLE,
-			0, 0,//POSITION
-			0, 0,//SIZE
+			0, 0,
+			0, 0,
 			hwnd,
-			(HMENU)IDC_MAIN_TOOL,
+			HMENU(IDC_MAIN_TOOL),
 			GetModuleHandle(NULL),
 			NULL
 		);
 		SendMessage(hTool, TB_BUTTONSTRUCTSIZE, (WPARAM)sizeof(TBBUTTON), 0);
+
 		TBBUTTON tbb[3];
 		TBADDBITMAP tbab;
 		tbab.hInst = HINST_COMMCTRL;
@@ -223,12 +217,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		tbb[2].fsStyle = TBSTYLE_BUTTON;
 		tbb[2].idCommand = ID_FILE_SAVE;
 
-		SendMessage(hTool, TB_ADDBUTTONS, sizeof(tbb) / sizeof(TBBUTTON), (LPARAM)&tbb);	
-		/////////////////////////////////////////////////////////////////////////////
+		SendMessage(hTool, TB_ADDBUTTONS, sizeof(tbb) / sizeof(TBBUTTON), (LPARAM)&tbb);
 
-		///////////////////////////////////////////////////////////////////////////////
-		////////////////////////////STATUSBAR//////////////////////////////////////////
-		//////////////////////////////////////////////////////////////////////////////
+		/////////////////////////////////////////////////////////////////////////
+		///////////////////////  Statusbar   ////////////////////////////////////
+		///////////////////////////////////////////////////////////////////////
+
 		HWND hStatus = CreateWindowEx
 		(
 			0,
@@ -245,36 +239,30 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
 		int statwidth[] = { 100,150,-1 };
 		SendMessage(hStatus, SB_SETPARTS, sizeof(statwidth) / sizeof(int), (LPARAM)statwidth);
-		SendMessage(hStatus, SB_SETTEXT, 0,(LPARAM)"This is a status bar");
+		SendMessage(hStatus, SB_SETTEXT, 0, (LPARAM)"This is a status of bar....");
+		/////////////////////////////////////////////////////////////////////////
+		///////////////////////  HOT KEYS   ////////////////////////////////////
+		///////////////////////////////////////////////////////////////////////
 
-
-		/////////////////////////////////////////////////////////////////////////////
-
-		///////////////////////////////////////////////////////////////////////////////
-		////////////////////////////FONT//////////////////////////////////////////
-		//////////////////////////////////////////////////////////////////////////////
 		HDC hdc = GetDC(NULL);
-		int lfHeight = -MulDiv(12, GetDeviceCaps(hdc, LOGPIXELSY), 72);
+		int lfHeight = MulDiv(100, GetDeviceCaps(hdc, LOGPIXELSY), 72);
 		ReleaseDC(NULL, hdc);
+
+
 		HFONT hFont = CreateFont
 		(
 			lfHeight, 0, 0, 0, 0,
-			FALSE, //ITALIC
-			0,
-			0,
-			RUSSIAN_CHARSET, //CHARSET
-			0,
-			0, 
-			0, 
-			0,
-			"Time New Romans"
+			FALSE, //Italic
+			0, 0, RUSSIAN_CHARSET, 0, 0, 0, 0, "Arial"
 		);
 		g_hFont = hFont;
 		SendMessage(hEdit, WM_SETFONT, (WPARAM)hFont, 0);
-		SetFocus(hEdit);
-		/////////////////////////////////////////////////////////////////////////////
+
+		////////////////////////////////////////////////////////////////////////
+
 	}
 	break;
+
 	case WM_SIZE:
 	{
 		/*RECT rcClient;
@@ -282,6 +270,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		HWND hEdit = GetDlgItem(hwnd, IDC_MAIN_EDIT);
 		SetWindowPos(hEdit, NULL, 0, 0, rcClient.right, rcClient.bottom, SWP_NOZORDER);*/
 		HWND hTool = GetDlgItem(hwnd, IDC_MAIN_TOOL);
+		/*if (!hTool)
+		{
+			char buffer[256];
+			FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM, 0, GetLastError(), MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), buffer, 256, 0);
+			MessageBox(NULL, buffer, "Error", MB_OK | MB_ICONERROR);
+		}*/
 		SendMessage(hTool, TB_AUTOSIZE, 0, 0);
 		RECT rcTool;
 		GetWindowRect(hTool, &rcTool);
@@ -293,88 +287,71 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		GetWindowRect(hStatus, &rcStatus);
 		int iStatusHeight = rcStatus.bottom - rcStatus.top;
 
-
-		HWND hEdit = GetDlgItem(hwnd, IDC_MAIN_EDIT);
 		RECT rcClient;
 		GetClientRect(hwnd, &rcClient);
-		int iEditHeight = rcClient.bottom - iToolHeight- iStatusHeight;
+		int iEditHeight = rcClient.bottom - iToolHeight - iStatusHeight;
+		HWND hEdit = GetDlgItem(hwnd, IDC_MAIN_EDIT);
 		SetWindowPos(hEdit, NULL, 0, iToolHeight, rcClient.right, iEditHeight, SWP_NOZORDER);
 	}
 	break;
 	case WM_DROPFILES:
 	{
-		HDROP hDrop = (HDROP)wParam;
+		HDROP hDrop = HDROP(wParam);
 		DragQueryFile(hDrop, 0, szFileName, MAX_PATH);
 		LoadTextFileToEdit(GetDlgItem(hwnd, IDC_MAIN_EDIT), szFileName);
 		DragFinish(hDrop);
 	}
 	break;
 	case WM_HOTKEY:
-	{
 		switch (wParam)
 		{
-		case HOTKEY_NEW:SendMessage(hwnd, WM_COMMAND, ID_FILE_NEW, 0); break;
-		case HOTKEY_OPEN:SendMessage(hwnd, WM_COMMAND, ID_FILE_OPEN, 0); break;
-		case HOTKEY_SAVE:SendMessage(hwnd, WM_COMMAND, ID_FILE_SAVE, 0); break;
-		case HOTKEY_SAVEAS:SendMessage(hwnd, WM_COMMAND, ID_FILE_SAVEAS, 0); break;
-		case HOTKEY_ABOUT :SendMessage(hwnd, WM_COMMAND, ID_HELP, 0); break;
+		case HOTKEY_NEW:
+			SendMessage(hwnd, WM_COMMAND, ID_FILE_NEW, 0);
+			break;
+		case HOTKEY_OPEN:
+			SendMessage(hwnd, WM_COMMAND, ID_FILE_OPEN, 0);
+			break;
+		case HOTKEY_SAVE:
+			SendMessage(hwnd, WM_COMMAND, ID_FILE_SAVE, 0);
+			break;
+		case HOTKEY_SAVEAS:
+			SendMessage(hwnd, WM_COMMAND, ID_FILE_SAVEAS, 0);
+			break;
+		case HOTKEY_ABOUT:
+			SendMessage(hwnd, WM_COMMAND, ID_HELP, 0);
+			break;
 		}
-	}
 		break;
+
 	case WM_COMMAND:
 		switch (LOWORD(wParam))
 		{
-		
+
 		case ID_FILE_OPEN:
 		{
-			if (FileWasChanged(hwnd))
-			{
-				/*switch (MessageBox(hwnd, "Сохранить изменения в файле?", "Нетак быстро...", MB_YESNOCANCEL | MB_ICONQUESTION))
-				{
-				case IDYES:	SendMessage(hwnd, WM_COMMAND, ID_FILE_SAVE, 0);
-				case IDNO:	DoFileOpen(hwnd);
-				case IDCANCEL:break;
-				}*/
-				WatchChanges(hwnd, DoFileOpen);
-			}
-			else
-			{
-				DoFileOpen(hwnd);
-			}
+			WatchChanges(hwnd, DoFileOpen);
+
 		}
 		break;
 		case ID_FILE_SAVE:
 		{
-			if (strlen(szFileName))
-			{
-				SaveTextFileFromEdit(GetDlgItem(hwnd, IDC_MAIN_EDIT), szFileName);
-			}
-			else
-			{
-				SendMessage(hwnd, WM_COMMAND, ID_FILE_SAVEAS, 0);
-			}
+			DoFileSave(hwnd);
+			break;
 		}
-		break;
 		case ID_FILE_SAVEAS:
 		{
-			DoFileSaveAs(hwnd);
+			DoFileAsSave(hwnd);
 		}
 		break;
 		case ID_FILE_EXIT:
-			//DestroyWindow(hwnd);
 			SendMessage(hwnd, WM_CLOSE, 0, 0);
+			//DestroyWindow(hwnd);
 			break;
 		case ID_FORMAT_FONT:
-				DoSelectFont(hwnd);
-				break;
+			DoSelectFont(hwnd);
+			break;
 		case ID_HELP:
 		{
-			switch (DialogBox(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_USER), hwnd, DlgProc))
-			{
-			case IDOK:		MessageBox(hwnd, "Dialog ended with OK!", "Info", MB_OK | MB_ICONINFORMATION);		break;
-			case IDCANCEL:	MessageBox(hwnd, "Dialog ended with Cancel!", "Info", MB_OK | MB_ICONINFORMATION);	break;
-			case -1:		MessageBox(hwnd, "Dialog Failed!", "Error", MB_OK | MB_ICONERROR);		break;
-			}
 			switch (DialogBox(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_ABOUT), hwnd, DlgProc))
 			{
 			case IDOK:		MessageBox(hwnd, "Dialog ended with OK!", "Info", MB_OK | MB_ICONINFORMATION);		break;
@@ -383,32 +360,38 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			}
 		}
 		break;
+		case IDD_USER:
+		{
+			switch (DialogBox(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_USER), hwnd, DlgProc))
+			{
+			case IDOK: MessageBox(hwnd, "Спасибо за информацию", "Thank you!", MB_OK | MB_ICONASTERISK); EndDialog(hwnd, IDOK); break;
+			case IDCANCEL: EndDialog(hwnd, IDOK); break;
+			case WM_COMMAND:EndDialog(hwnd, IDOK); break;
 
-	
+
+			}
+
+
+		}
+		break;
 		}
 		break;
 	case WM_CLOSE:
+
 	{
-		if (FileWasChanged(hwnd))
-		{
-			/*switch (MessageBox(hwnd, "Сохранить изменения в файле?", "Нетак быстро...", MB_YESNOCANCEL | MB_ICONQUESTION))
-			{
-			case IDYES:	SendMessage(hwnd, WM_COMMAND, ID_FILE_SAVE, 0);
-			case IDNO:	DestroyWindow(hwnd);
-			case IDCANCEL:break;
-			}*/
-			WatchChanges(hwnd, DestroyWindow);
-		}
-		else
-		{
-			DestroyWindow(hwnd);
-		}
+		WatchChanges(hwnd, DestroyWindow);
+
+
+
 	}
 	break;
 	case WM_DESTROY:
-		//MessageBox(hwnd, "От странные, лчше б дверь закрыли", "Возмущение", MB_OK | MB_ICONINFORMATION);
+	{
+		//if (MessageBox(hwnd, "Сохранить измененния?", "Закрытие", MB_OK | MB_ICONINFORMATION));
+			//MessageBox(hwnd, "От странные, лчше б дверь закрыли", "Возмущение", MB_OK | MB_ICONINFORMATION);
 		PostQuitMessage(0);
-		break;
+	}
+	break;
 	default:return DefWindowProc(hwnd, uMsg, wParam, lParam);
 	}
 	return 0;
@@ -441,10 +424,10 @@ BOOL	CALLBACK DlgProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
 BOOL	LoadTextFileToEdit(HWND hEdit, LPCTSTR pszFileName)
 {
+	strcpy_s(szCurrentFileName, MAX_PATH, pszFileName);
+
 	BOOL bSuccess = FALSE;
-
-	MessageBox(hEdit, pszFileName, "OpeningFile:", MB_OK | MB_ICONINFORMATION);
-
+	//MessageBox(hEdit, pszFileName, "Open file", MB_OK | MB_ICONINFORMATION);
 	HANDLE hFile = CreateFile(pszFileName, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
 	if (hFile != INVALID_HANDLE_VALUE)
 	{
@@ -452,6 +435,7 @@ BOOL	LoadTextFileToEdit(HWND hEdit, LPCTSTR pszFileName)
 		if (dwFileSize != UINT_MAX)
 		{
 			if (lpszFileText)GlobalFree(lpszFileText);
+
 			lpszFileText = (LPSTR)GlobalAlloc(GPTR, dwFileSize + 1);
 			if (lpszFileText)
 			{
@@ -459,13 +443,14 @@ BOOL	LoadTextFileToEdit(HWND hEdit, LPCTSTR pszFileName)
 
 				if (ReadFile(hFile, lpszFileText, dwFileSize, &dwRead, NULL))
 				{
-					lpszFileText[dwFileSize] = 0;
+					lpszCurrentFileContent = (LPSTR)GlobalAlloc(GPTR, dwFileSize + 1);
+					//strcpy_s(lpszSavedFileContent, dwFileSize + 1, lpszFileText);
+					//lpszFileText[dwFileSize] = 0;
 					if (SetWindowText(hEdit, lpszFileText))
 					{
 						bSuccess = TRUE;
 						SetWindowTitle(hEdit);
 					}
-					
 				}
 			}
 		}
@@ -489,47 +474,31 @@ BOOL	SaveTextFileFromEdit(HWND hEdit, LPCTSTR pszFileName)
 			{
 				if (GetWindowText(hEdit, lpszFileText, dwTextLength + 1))
 				{
+					lpszSavedFileContent = (LPSTR)GlobalAlloc(GPTR, dwTextLength + 1);
+					strcpy_s(lpszSavedFileContent, dwTextLength + 1, lpszFileText);
 					DWORD dwWritten;
-					if (WriteFile(hFile, lpszFileText, dwTextLength, &dwWritten, NULL))
-					{
-						bSuccess = TRUE;
-						SetWindowTitle(hEdit);
-					}
-						
+					if (WriteFile(hFile, lpszFileText, dwTextLength, &dwWritten, NULL))bSuccess = TRUE;
 				}
+
 			}
 		}
 		CloseHandle(hFile);
 	}
 	return bSuccess;
 }
-
-
-BOOL __stdcall DoFileOpen(HWND hwnd)
+BOOL Compare(HWND hwnd)
 {
-	//Создадим стандартное окно открытия файла:
-	OPENFILENAME ofn;
-	//CHAR szFileName[MAX_PATH]{};
-
-	ZeroMemory(&ofn, sizeof(ofn));
-
-	ofn.lStructSize = sizeof(ofn);
-	ofn.hwndOwner = hwnd;
-	ofn.lpstrFilter = szFilter;
-	ofn.lpstrFile = szFileName;
-	ofn.nMaxFile = MAX_PATH;
-	ofn.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
-	//ofn.lpstrDefExt = "txt";
-
-	if (GetOpenFileName(&ofn))
-	{
-		HWND hEdit = GetDlgItem(hwnd, IDC_MAIN_EDIT);
-		LoadTextFileToEdit(hEdit, szFileName);
-		return TRUE;
-	}
-	return FALSE;
+	HWND hEdit = GetDlgItem(hwnd, IDC_MAIN_EDIT);
+	DWORD dwTextLenght = GetWindowTextLength(hEdit);
+	if (lpszCurrentFileContent)
+		GlobalFree(lpszCurrentFileContent);
+	lpszCurrentFileContent = (LPSTR)GlobalAlloc(GPTR, dwTextLenght + 1);
+	GetWindowText(hEdit, lpszCurrentFileContent, dwTextLenght + 1);
+	BOOL identical = TRUE;
+	if (strcmp(lpszSavedFileContent, lpszCurrentFileContent) == 0)identical = TRUE; else identical = FALSE;
+	return identical;
 }
-VOID DoFileSaveAs(HWND hwnd)
+VOID DoFileAsSave(HWND hwnd)
 {
 	OPENFILENAME ofn;
 	//CHAR szFileName[MAX_PATH]{};
@@ -550,30 +519,79 @@ VOID DoFileSaveAs(HWND hwnd)
 		SaveTextFileFromEdit(hEdit, szFileName);
 	}
 }
+BOOL __stdcall DoFileOpen(HWND hwnd)
+{
+	//Создадим стандартное окно открытия файла:
+	OPENFILENAME ofn;
+	//CHAR szFileName[MAX_PATH]{};
 
+	ZeroMemory(&ofn, sizeof(ofn));
+
+	ofn.lStructSize = sizeof(ofn);
+	ofn.hwndOwner = hwnd;
+	ofn.lpstrFilter = szFilter;
+	ofn.lpstrFile = szFileName;
+	ofn.nMaxFile = MAX_PATH;
+	ofn.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
+	//ofn.lpstrDefExt = "txt";
+
+	if (GetOpenFileName(&ofn))
+	{
+		HWND hEdit = GetDlgItem(hwnd, IDC_MAIN_EDIT);
+		LoadTextFileToEdit(hEdit, szFileName);
+	}
+	return FALSE;
+}
+VOID DoFileSave(HWND hwnd)
+{
+	if (szCurrentFileName[0])
+	{
+		SaveTextFileFromEdit(GetDlgItem(hwnd, IDC_MAIN_EDIT), szCurrentFileName);
+	}
+	else
+	{
+		SendMessage(hwnd, WM_COMMAND, ID_FILE_SAVEAS, 0);
+	}
+
+}
 BOOL FileWasChanged(HWND hwnd)
 {
 	BOOL bWasChanged = FALSE;
 	HWND hEdit = GetDlgItem(hwnd, IDC_MAIN_EDIT);
-	DWORD dwCurrentTextLength = GetWindowTextLength(hEdit);
-	DWORD dwFileTextLength = lpszFileText ? strlen(lpszFileText) : 0;
-	if (dwCurrentTextLength != dwFileTextLength)return TRUE;
+	DWORD dwCurrentTextLenght = GetWindowTextLength(hEdit);
+	DWORD dwFileTextLenght = lpszFileText ? strlen(lpszFileText) : 0;
+	if (dwCurrentTextLenght != dwFileTextLenght)return TRUE;
 	else
 	{
-		//Если строки совпадают по размеру, то их нужно сравнивать:
-		//1) Выделяем память, для текста в редакторе:
-		LPSTR lpszCurrentText = (LPSTR)GlobalAlloc(GPTR, dwCurrentTextLength + 1);
-
-		//2) Загружаем текст из редактора в строку: 
-		GetWindowText(hEdit, lpszCurrentText, dwCurrentTextLength + 1);
+		LPSTR lpszCurrentText = (LPSTR)GlobalAlloc(GPTR, dwCurrentTextLenght + 1);
+		GetWindowText(hEdit, lpszCurrentText, dwCurrentTextLenght + 1);
 		if (lpszFileText && strcmp(lpszCurrentText, lpszFileText) == 0)bWasChanged = FALSE;
 		GlobalFree(lpszCurrentText);
 	}
 	return bWasChanged;
+
+}
+VOID WatchChanges(HWND hwnd, BOOL(__stdcall *Action)(HWND))
+{
+	if (FileWasChanged(hwnd))
+	{
+		switch (MessageBox(hwnd, "Сохранить изменения в файле?", "Ты ПИПАВСЯ!", MB_YESNOCANCEL | MB_ICONQUESTION))
+		{
+		case IDYES:SendMessage(hwnd, WM_COMMAND, ID_FILE_SAVE, 0);
+		case IDNO:Action(hwnd);
+		case IDCANCEL:break;
+
+
+		}
+	}
+	else
+	{
+		Action(hwnd);
+	}
 }
 VOID SetWindowTitle(HWND hEdit)
 {
-	CHAR szTitle[MAX_PATH] = "s1mpleWindowEdit - ";
+	CHAR szTitle[MAX_PATH] = "Simple Window Edit - ";
 	LPSTR lpszNameOnly = strrchr(szFileName, '\\') + 1;
 	strcat_s(szTitle, MAX_PATH, lpszNameOnly);
 	HWND hwndParent = GetParent(hEdit);
@@ -590,13 +608,12 @@ VOID DoSelectFont(HWND hwnd)
 
 	GetObject(g_hFont, sizeof(LOGFONT), &lf);
 
-	cf.Flags =  CF_EFFECTS|CF_INITTOLOGFONTSTRUCT | CF_SCREENFONTS;
+	cf.Flags = CF_EFFECTS | CF_INITTOLOGFONTSTRUCT | CF_SCREENFONTS;
 	cf.hwndOwner = hwnd;
-	//cf.hInstance = GetModuleHandle(NULL);
+	cf.hInstance = GetModuleHandle(NULL);
 	cf.lpLogFont = &lf;
 	cf.rgbColors = g_rgbText;
 	cf.lStructSize = sizeof(CHOOSEFONT);
-
 
 	if (ChooseFont(&cf))
 	{
@@ -607,11 +624,11 @@ VOID DoSelectFont(HWND hwnd)
 		}
 		else
 		{
-			MessageBox(hwnd, "Font Creation Failed", "Error", MB_OK | MB_ICONERROR);
+			MessageBox(hwnd, "Font creation failed", "Error", MB_OK | MB_ICONERROR);
 		}
 		g_rgbText = cf.rgbColors;
-		
+		SendMessage(GetDlgItem(hwnd, IDC_MAIN_EDIT), WM_SETFONT, (WPARAM)g_hFont, 0);
+
 	}
-	SendMessage(GetDlgItem(hwnd, IDC_MAIN_EDIT), WM_SETFONT, (WPARAM)g_hFont, TRUE);
 }
 
