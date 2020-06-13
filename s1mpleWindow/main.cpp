@@ -262,7 +262,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
 	}
 	break;
-
+	case WM_CTLCOLOREDIT:
+	{
+		HDC hdc = (HDC)wParam;
+		SetTextColor(hdc, g_rgbText);
+	}
+	break;
 	case WM_SIZE:
 	{
 		/*RECT rcClient;
